@@ -11,6 +11,8 @@
   ],
   "scripts": {
     "start": "node server.cjs",
+    "prepare:production": "node scripts/prepare-production.cjs",
+    "check:deploy": "node scripts/check-deploy.cjs",
     "build:hostinger": "npm run prisma:generate && npm run build",
     "db:deploy": "npm --workspace apps/backend run prisma:deploy",
     "build": "npm --workspace packages/shared run build && npm --workspace apps/backend run build && npm --workspace apps/frontend run build",

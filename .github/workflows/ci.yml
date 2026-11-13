@@ -1,0 +1,44 @@
+name: Validar aplicação
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://postgres:ci@localhost:5432/motum_ci
+      DIRECT_URL: postgresql://postgres:ci@localhost:5432/motum_ci
+      MASTER_ADMIN_EMAIL: ci-admin@example.test
+      MASTER_ADMIN_PASSWORD: ephemeral-ci-master-password
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: motum_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run build:hostinger
+      - run: npm run db:deploy
+      - run: npm run seed
+      - run: npm --workspace apps/backend test -- --runInBand
+      - run: node --test scripts/test-deploy.cjs
+      - run: node scripts/smoke-production.cjs
+      - run: npm run check:deploy -- --artifacts-only
