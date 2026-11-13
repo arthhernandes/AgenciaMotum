@@ -1,0 +1,8 @@
+# Create a named tunnel in Cloudflare after adding your domain.
+# Replace the UUID, credentials path and hostname with values from your account.
+tunnel: TUNNEL_UUID
+credentials-file: C:/MercadoLivreDashBoardAnuncios/.tools/cloudflare/TUNNEL_UUID.json
+ingress:
+  - hostname: api.example.com
+    service: http://localhost:3001
+  - service: http_status:404

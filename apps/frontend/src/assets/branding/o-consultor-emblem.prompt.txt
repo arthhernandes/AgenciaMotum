@@ -1,0 +1,5 @@
+Mode: built-in image_gen image editing, transparent_background=true.
+Source: o-consultor.jpg
+Output: o-consultor-emblem.png
+
+Edit the supplied O Consultor logo asset. Extract ONLY its shield-and-upward-arrow emblem, remove all lettering and the entire off-white textured background, and produce a tightly framed square transparent PNG suitable as an app icon and favicon. Preserve the original emblem's geometry, eye, connected gold nodes, handshake, arrow, navy-blue/cyan and gold gradients as faithfully as possible. No redesign, no rounded-square frame, no white tile, no outer border, no new shadow. Background outside the actual shield/arrow must be alpha transparent, including all surrounding margins. Keep the deliberate thin white separation lines within the arrow design. Center the emblem with about 5% transparent margin.

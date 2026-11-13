@@ -1,0 +1,9 @@
+import { OAuthStateService } from '../src/auth/oauth-state.service';
+describe('Connection permission across OAuth redirects',()=>{
+ const state='e3cb6eb8-ad84-4cee-a95f-aec61316a40c';
+ function setup(){const db:any={user:{findUnique:jest.fn().mockResolvedValue({role:'CONSULTANT',active:true,permissions:['connections.manage']})},auditLog:{create:jest.fn(),findFirst:jest.fn().mockResolvedValue({id:'state-row',userId:'u',after:{provider:'BLING',account:'outlet4u',status:'PENDING',expiresAt:Date.now()+60000}}),updateMany:jest.fn().mockResolvedValue({count:1})}};return {db,service:new OAuthStateService(db)};}
+ it('binds an unpredictable state to the authenticated user, provider and selected account',async()=>{const {db,service}=setup();expect(await service.create('BLING','outlet4u','u')).toMatch(/^[a-f0-9-]{36}$/);expect(db.auditLog.create.mock.calls[0][0].data).toMatchObject({userId:'u',after:{provider:'BLING',account:'outlet4u',status:'PENDING'}});});
+ it('rejects forged account-name states and wrong providers',async()=>{const {service}=setup();await expect(service.consume('BLING','outlet4u')).rejects.toThrow();await expect(service.consume('MERCADO_LIVRE',state)).rejects.toThrow();});
+ it('rechecks permissions when the provider returns, before changing credentials',async()=>{const {db,service}=setup();db.user.findUnique.mockResolvedValue({role:'CONSULTANT',active:true,permissions:[]});await expect(service.consume('BLING',state)).rejects.toThrow('permissão');expect(db.auditLog.updateMany).not.toHaveBeenCalled();});
+ it('consumes the state once using compare and swap',async()=>{const {db,service}=setup();await expect(service.consume('BLING',state)).resolves.toBe('outlet4u');expect(db.auditLog.updateMany.mock.calls[0][0].data.after.status).toBe('CLAIMED');db.auditLog.updateMany.mockResolvedValue({count:0});await expect(service.consume('BLING',state)).rejects.toThrow('utilizada');});
+});

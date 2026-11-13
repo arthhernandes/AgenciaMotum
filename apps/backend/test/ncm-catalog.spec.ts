@@ -1,0 +1,8 @@
+import {ncmDate,normalizeNcmSearch,prepareNcmEntries} from '../src/ncm/ncm-catalog';
+describe('NCM catalog import',()=>{
+ const input=()=>({source:'Tabela_NCM_Vigente_20261014.xlsx',sourceHash:'a'.repeat(64),referenceDate:'2026-10-14',entries:[{code:'01012100',formattedCode:'0101.21.00',description:'-- Reprodutores de raça pura',validFrom:'01/04/2022',validUntil:'31/12/9999',legalAct:'Res Gecex',legalNumber:'272',legalYear:'2021'},{code:'01',formattedCode:'01',description:'Animais vivos.',validFrom:'01/04/2022',validUntil:'31/12/9999'},{code:'0101',formattedCode:'01.01',description:'Cavalos, asininos e muares, vivos.',validFrom:'01/04/2022',validUntil:'31/12/9999'}]});
+ it('preserves leading zeros and hierarchy even with child rows first',()=>{const data=prepareNcmEntries(input());const entry=data.find(row=>row.code==='01012100');expect(entry.formattedCode).toBe('0101.21.00');expect(entry.parentCode).toBe('0101');expect(entry.fullDescription).toContain('Animais vivos. > Cavalos');expect(entry.description).toBe('-- Reprodutores de raça pura');expect(entry.legalYear).toBe(2021);expect(entry.validUntil.toISOString()).toBe('9999-12-31T00:00:00.000Z');});
+ it('rejects duplicate codes before database writes',()=>{const data=input();data.entries.push(data.entries[0]);expect(()=>prepareNcmEntries(data)).toThrow('duplicado');});
+ it('does not accept invalid calendar dates',()=>{expect(()=>ncmDate('31/02/2026')).toThrow('Data');expect(()=>ncmDate('2026-10-14')).toThrow('Data');});
+ it('searches inherited descriptions without requiring accents or capitalization',()=>{expect(normalizeNcmSearch('  CALÇAS de ALGODÃO ')).toBe('calcas de algodao');expect(prepareNcmEntries(input()).find(row=>row.code==='01012100').searchText).toContain('raca pura');});
+});

@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict');
+const {chromium}=require('C:/Users/Servidor/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages/playwright/driver/package');
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const login=await fetch('http://localhost:3001/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin@example.com',password:'admin123'})}).then(r=>r.json());if(!login.accessToken)throw new Error('Local login failed');
+ await page.addInitScript(token=>{localStorage.setItem('token',token);localStorage.setItem('selectedMarketplaceAccountId','olist-ts-comercio');},login.accessToken);
+ let saved;await page.route('**/api/**',async route=>{const req=route.request(),url=new URL(req.url());if(url.pathname==='/api/operations/fiscal-templates'){if(req.method()==='POST'){saved=req.postDataJSON();return route.fulfill({json:{...saved,id:'test',version:'1'}});}return route.fulfill({json:[]});}if(req.method()!=='GET')return route.fulfill({json:{}});return route.continue();});
+ await page.goto('http://192.168.15.88:4201/modelos-fiscais');await page.getByRole('button',{name:'Novo modelo',exact:true}).click();
+ assert.equal(await page.getByRole('combobox',{name:'CSOSN',exact:true}).inputValue(),'102');
+ await page.getByRole('combobox',{name:'Tipo de origem',exact:true}).selectOption('reseller');
+ await page.getByRole('combobox',{name:'Código de origem',exact:true}).selectOption('2');
+ await page.getByRole('combobox',{name:'Unidade de medida',exact:true}).selectOption('__custom__');
+ await page.getByRole('textbox',{name:'Unidade de medida personalizada',exact:true}).fill('FARDO');
+ await page.getByRole('combobox',{name:'Unidade de medida',exact:true}).selectOption('PAR');
+ await page.getByRole('combobox',{name:'CSOSN',exact:true}).selectOption('500');
+ const input=page.getByRole('combobox',{name:'NCM',exact:true});await input.fill('camisetas');
+ const option=page.getByRole('option').filter({hasText:'6109.10.00'});await option.first().click();assert.equal(await input.inputValue(),'61091000');
+ await page.getByLabel('Nome do modelo').fill('Teste pesquisa NCM');await page.getByRole('button',{name:'Criar modelo',exact:true}).click();await page.getByText('Modelo salvo. Nenhum anúncio foi alterado.').waitFor();assert.equal(saved.values.ncm,'61091000');
+ assert.equal(saved.values.origin_type,'reseller');assert.equal(saved.values.origin_detail,'2');assert.equal(saved.values.measurement_unit,'PAR');assert.equal(saved.values.csosn,'500');
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({descriptionSearch:true,selectedCode:'61091000',savePayloadVerified:true,defaultCsosnVerified:true,fiscalChoicesVerified:true,errors}));
+}finally{await browser.close();}})().catch(e=>{console.error(e.message);process.exitCode=1;});

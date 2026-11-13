@@ -1,0 +1,35 @@
+const assert=require('node:assert/strict');
+const {chromium}=require('C:/Users/Servidor/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages/playwright/driver/package');
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage();page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const login=await fetch('http://localhost:3001/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin@example.com',password:'admin123'})}).then(r=>r.json());assert.ok(login.accessToken);
+ await page.addInitScript(token=>{localStorage.setItem('token',token);localStorage.setItem('selectedMarketplaceAccountId','olist-ts-comercio');},login.accessToken);
+ const variant=(itemId,size)=>({itemId,sku:'1.'+size,availableQuantity:1,soldQuantity:0,price:100,status:'active',attributes:{attribute_combinations:[{id:'COLOR',value_name:'Branco'},{id:'SIZE',value_name:size}]}});
+ const rows=[{id:'family1',title:'Família de teste',itemId:'2 MLBs',children:[{itemId:'MLB1'},{itemId:'MLB2'}],variants:[variant('MLB1','P'),variant('MLB2','M')]},{id:'family2',title:'Anúncio sem visitas',itemId:'MLB3',children:[{itemId:'MLB3'}],variants:[]},{id:'family3',title:'Visitas indisponíveis',itemId:'MLB4',children:[{itemId:'MLB4'}],variants:[]}].map(row=>({...row,status:'active',availableQuantity:2,soldQuantity:0,price:100,skuStatus:'found'}));
+ rows.push({...rows[0],id:'family4',title:'Consulta parcial',children:[{itemId:'MLB5'},{itemId:'MLB6'}],variants:[]});
+ let release;const ready=new Promise(resolve=>release=resolve);let requested;const requests=[];
+ await page.route('**/api/**',async route=>{const req=route.request(),path=new URL(req.url()).pathname;
+  if(path==='/api/listings/grouped')return route.fulfill({json:{data:rows,pagination:{page:1,limit:50,total:4,pages:1}}});
+  if(path==='/api/listings/visits'){requested=req.postDataJSON();requests.push(requested);await ready;return route.fulfill({json:{days:30,items:[{itemId:'MLB1',visits:10},{itemId:'MLB2',visits:7},{itemId:'MLB3',visits:0},{itemId:'MLB4',visits:null},{itemId:'MLB5',visits:23},{itemId:'MLB6',visits:requested.ids.length<6?2:null}].filter(item=>requested.ids.includes(item.itemId))}});}
+  if(req.method()!=='GET')throw new Error('Unexpected write '+path);return route.continue();
+ });
+ await page.goto('http://192.168.15.88:4201/anuncios',{waitUntil:'domcontentloaded'});await page.getByText('Família de teste',{exact:true}).waitFor();await page.getByText('Itens por página:',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Próxima página',exact:true}).count(),1);assert.match(await page.locator('mat-paginator').innerText(),/1–4 de 4/);
+ assert.match(await page.locator('td.mat-column-visits').first().innerText(),/Consultando/);release();await page.locator('td.mat-column-visits').first().getByText('17',{exact:true}).waitFor();
+ assert.equal((await page.locator('td.mat-column-visits').nth(1).innerText()).trim(),'0');assert.match(await page.locator('td.mat-column-visits').nth(2).innerText(),/concluir/);assert.deepEqual(requests[0].ids,['MLB1','MLB2','MLB3','MLB4','MLB5','MLB6']);assert.ok(requests.some(r=>r.ids.length===2&&r.ids.includes('MLB6')));
+ assert.ok(requested.dateFrom);assert.ok(requested.dateTo);
+ assert.match(await page.locator('td.mat-column-visits').nth(3).innerText(),/^25$/);
+ await page.locator('.variant-button').first().click();await page.getByText('Visitas no período: 10',{exact:true}).waitFor();await page.getByText('Visitas no período: 7',{exact:true}).waitFor();assert.deepEqual(errors,[]);
+ await page.getByRole('button',{name:'Ordenar visitas do maior para o menor',exact:true}).click();
+ assert.match(await page.locator('td.mat-column-visits').first().innerText(),/^25/);
+ assert.match(await page.locator('td.mat-column-visits').last().innerText(),/concluir/);
+ await page.getByRole('button',{name:'Ordenar visitas do menor para o maior',exact:true}).click();
+ assert.equal((await page.locator('td.mat-column-visits').first().innerText()).trim(),'0');
+ assert.match(await page.locator('td.mat-column-visits').last().innerText(),/concluir/);
+ await page.getByLabel('Data inicial',{exact:true}).fill('2026-10-01');
+ await page.getByLabel('Data final',{exact:true}).fill('2026-10-02');
+ await page.getByRole('button',{name:'Consultar visitas',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.visits-period').textContent.includes('01/10/2026 a 02/10/2026'));
+ await page.waitForTimeout(150);assert.equal(requested.dateFrom,'2026-10-01');assert.equal(requested.dateTo,'2026-10-02');
+ await page.getByLabel('Data final',{exact:true}).fill('2026-09-01');await page.getByRole('button',{name:'Consultar visitas',exact:true}).click();await page.getByRole('alert').filter({hasText:'Informe datas'}).waitFor();
+ console.log(JSON.stringify({automaticMissingRetry:true,completeTotalsOnly:true,customVisitDates:true,visitsSortingBothDirections:true,columnVisible:true,listLoadsBeforeMetrics:true,familyTotal:17,perListingDetails:true,zeroPreserved:true,unavailableNotZero:true,noMarketplaceWrites:true,errors}));
+}finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

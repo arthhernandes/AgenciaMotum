@@ -1,0 +1,26 @@
+const assert=require('node:assert/strict');
+const {chromium}=require('C:/Users/Servidor/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages/playwright/driver/package');
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage();page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const login=await fetch('http://localhost:3001/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin@example.com',password:'admin123'})}).then(r=>r.json());assert.ok(login.accessToken);
+ await page.addInitScript(token=>{localStorage.setItem('token',token);localStorage.setItem('selectedMarketplaceAccountId','olist-ts-comercio');},login.accessToken);
+ let saved;
+ await page.route('**/api/users**',async route=>{if(route.request().method()==='POST'){saved=route.request().postDataJSON();return route.fulfill({json:{id:'mock-user',...saved}});}return route.continue();});
+ await page.goto('http://192.168.15.88:4201/usuarios',{waitUntil:'domcontentloaded',timeout:60000});await page.getByRole('button',{name:'Novo usuário',exact:true}).click();
+ await page.getByRole('button',{name:'Desmarcar todas',exact:true}).click();
+ await page.getByRole('checkbox',{name:'Permitir ações em Modelos fiscais',exact:true}).check();assert.equal(await page.getByRole('checkbox',{name:'Visualizar Modelos fiscais',exact:true}).isChecked(),true);
+ await page.getByRole('checkbox',{name:'Visualizar Modelos fiscais',exact:true}).uncheck();assert.equal(await page.getByRole('checkbox',{name:'Permitir ações em Modelos fiscais',exact:true}).isChecked(),false);
+ await page.getByRole('checkbox',{name:'Visualizar Anúncios e vínculos',exact:true}).check();
+ await page.getByLabel('Nome',{exact:true}).fill('Teste de permissões');await page.getByLabel('E-mail',{exact:true}).fill('permissions-test@example.com');await page.getByLabel('Senha inicial',{exact:false}).fill('safe-test-123');await page.getByRole('button',{name:'Criar usuário',exact:true}).click();await page.getByText('Usuário salvo.',{exact:true}).waitFor();assert.deepEqual(saved.permissions,['listings.view']);
+ await page.route('**/api/auth/me**',route=>route.fulfill({json:{id:'restricted',name:'Restricted',role:'CONSULTANT',permissions:['listings.view']}}));
+ await page.goto('http://192.168.15.88:4201/anuncios',{waitUntil:'domcontentloaded',timeout:60000});await page.locator('td.selection-cell input').first().waitFor();
+ assert.equal(await page.getByRole('button',{name:'Edição em massa',exact:true}).isVisible(),false);
+ assert.equal(await page.locator('button.duplicate-action').first().isVisible(),false);
+ assert.equal(await page.getByRole('button',{name:'Sincronizar anúncios',exact:true}).isVisible(),false);
+ assert.equal(await page.locator('mat-sidenav a[routerLink="/sincronizacoes"]').isVisible(),false);
+ await page.goto('http://192.168.15.88:4201/usuarios',{waitUntil:'domcontentloaded',timeout:60000});await page.waitForURL('**/anuncios');
+ await page.goto('http://192.168.15.88:4201/sincronizacoes',{waitUntil:'domcontentloaded',timeout:60000});await page.waitForURL('**/anuncios');
+ await page.route('**/api/auth/me**',route=>route.fulfill({json:{id:'restricted',name:'Restricted',role:'CONSULTANT',permissions:[]}}));
+ await page.goto('http://192.168.15.88:4201/anuncios',{waitUntil:'domcontentloaded',timeout:60000});await page.waitForURL('**/sem-acesso');
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({permissionMatrix:true,viewActionDependency:true,selectedPermissionsSent:true,restrictedMenus:true,restrictedButtons:true,directNavigationBlocked:true,emptyPermissionsNoAccess:true,noRealUserWrites:true,errors}));
+}finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

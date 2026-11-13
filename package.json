@@ -1,0 +1,31 @@
+{
+  "name": "olist-ml-audit",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "node server.cjs",
+    "build:hostinger": "npm run prisma:generate && npm run build",
+    "db:deploy": "npm --workspace apps/backend run prisma:deploy",
+    "build": "npm --workspace packages/shared run build && npm --workspace apps/backend run build && npm --workspace apps/frontend run build",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:backend": "npm --workspace apps/backend run start:dev",
+    "dev:frontend": "npm --workspace apps/frontend run start",
+    "prisma:generate": "npm --workspace apps/backend run prisma:generate",
+    "prisma:migrate": "npm --workspace apps/backend run prisma:migrate",
+    "seed": "npm --workspace apps/backend run seed"
+  },
+  "overrides": {
+    "rxjs": "7.8.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

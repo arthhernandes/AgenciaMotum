@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');const {signature,legacyScope}=require('./lib/enrichment-checkpoints.cjs');
+const record=(id,missing=true)=>({key:id,payload:{orderId:id,orderDate:'2026-10-22',status:'paid',currency:'BRL',rows:[{itemIndex:0,itemId:'MLB'+id,sku:'5484.01',quantity:1,unitPrice:100,sellerShipping:missing?null:10,fiscalCost:null}],...(!missing?{financialEnrichedAt:'2026-10-23T14:00:00Z'}:{})}});
+const records=[record('1',false),record('2'),record('3')],job={after:{startedAt:'2026-10-23T13:55:00Z',accounts:[{account:'outlet4u',total:3,processed:2,failed:0}],issues:[]}};
+const restored=legacyScope(records,job,'outlet4u');assert.equal(restored.scope.length,3);assert.equal(restored.reviewed.map(r=>r.payload.orderId).join(','),'1,2');
+assert.equal(restored.reviewed[1].payload.rows[0].fiscalCost,null);
+assert.equal(signature(records[0].payload),signature({...records[0].payload,financialEnrichedAt:'new',rows:[{...records[0].payload.rows[0],sellerShipping:20,fiscalCost:50}]}));
+assert.notEqual(signature(records[0].payload),signature({...records[0].payload,rows:[{...records[0].payload.rows[0],quantity:2}]}));
+assert.throws(()=>legacyScope(records.slice(0,2),job,'outlet4u'),/segurança/);
+assert.equal(legacyScope(records,job,'mottum'),null);
+assert.equal(legacyScope(records,{after:{...job.after,issues:[{account:'outlet4u',orderId:'2'}]}},'outlet4u').reviewed.length,1);
+console.log('Enrichment checkpoints verified: prior progress, unavailable fiscal values remain reviewed, safe reconstruction, financial fills preserve identity, changed quantity invalidates checkpoint, account scope and failures.');

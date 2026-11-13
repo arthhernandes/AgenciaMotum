@@ -1,0 +1,16 @@
+import { SkuActionsService } from '../src/listing-links/sku-actions.service';
+describe('SKU queue cancellation',()=>{
+  function setup(kind='sku'){
+    const record={id:'q',createdAt:new Date(),after:{kind,tasks:[{reference:'MLB1',status:'RUNNING'},{reference:'MLB2',status:'PENDING'},{reference:'MLB3',status:'SUCCESS'}]}};
+    const prisma:any={auditLog:{findFirst:jest.fn().mockResolvedValue(record),findMany:jest.fn().mockResolvedValue([]),updateMany:jest.fn().mockResolvedValue({count:1})}};
+    return {record,prisma,service:new SkuActionsService(prisma)};
+  }
+  it('cancels unfinished steps while preserving completed steps and history',async()=>{const {service,prisma}=setup();const result=await service.cancelQueue('a','u','q');expect(result.tasks.map((task:any)=>task.status)).toEqual(['CANCELLED','CANCELLED','SUCCESS']);expect(result.tasks[0].message).toContain('já enviadas');expect(prisma.auditLog.findFirst.mock.calls[0][0].where).toMatchObject({entityId:'a',userId:'u'});});
+  it('can cancel one step without cancelling its siblings',async()=>{const {service}=setup();const result=await service.cancelQueue('a','u','q','MLB2');expect(result.tasks.map((task:any)=>task.status)).toEqual(['RUNNING','CANCELLED','SUCCESS']);});
+  it('rejects a step that does not belong to the queue',async()=>{const {service,prisma}=setup();await expect(service.cancelQueue('a','u','q','OTHER')).rejects.toThrow('fora desta fila');expect(prisma.auditLog.updateMany).not.toHaveBeenCalled();});
+  it('does not allow access to other users or accounts',async()=>{const {service,prisma}=setup();prisma.auditLog.findFirst.mockResolvedValue(null);await expect(service.cancelQueue('other','other','q')).rejects.toThrow('não encontrada');expect(prisma.auditLog.updateMany).not.toHaveBeenCalled();});
+  it('retries cancellation when progress changes at the same instant',async()=>{const {service,prisma}=setup();prisma.auditLog.updateMany.mockResolvedValueOnce({count:0});await expect(service.cancelQueue('a','u','q')).resolves.toMatchObject({id:'q'});expect(prisma.auditLog.updateMany).toHaveBeenCalledTimes(2);});
+  it('makes repeated cancellation harmless',async()=>{const {service,record,prisma}=setup();record.after.tasks.forEach(task=>task.status='CANCELLED');await service.cancelQueue('a','u','q');expect(prisma.auditLog.updateMany).not.toHaveBeenCalled();});
+  it('marks related publications without overwriting worker progress or other account metadata',async()=>{const {service,prisma}=setup('variations');prisma.auditLog.findMany.mockResolvedValue([{id:'job',before:{accountId:'a',marketplaceAccountId:'ml'},after:{status:'WAITING'}}]);await service.cancelQueue('a','u','q','MLB1');const query=prisma.auditLog.findMany.mock.calls[0][0].where;expect(query.userId).toBe('u');expect(query.AND[0].before.equals).toBe('a');expect(query.AND[1].OR).toEqual([{after:{path:['plan','modelMlb'],equals:'MLB1'}}]);expect(prisma.auditLog.updateMany.mock.calls[1][0].data).toEqual({before:expect.objectContaining({accountId:'a',marketplaceAccountId:'ml',cancelRequested:true})});});
+  it('does not resume a cancelled task',async()=>{const {service,record,prisma}=setup();record.after.tasks[0].status='CANCELLED';await expect(service.updateQueue('a','u','q','MLB1','RUNNING','')).rejects.toThrow('mudou');expect(prisma.auditLog.updateMany).not.toHaveBeenCalled();});
+});

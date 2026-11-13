@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict');
+const {chromium}=require('C:/Users/Servidor/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages/playwright/driver/package');
+(async()=>{const login=await fetch('http://localhost:3001/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'admin@example.com',password:'admin123'})}).then(r=>r.json());assert.ok(login.accessToken);
+ const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage({viewport:{width:1440,height:900}});page.setDefaultTimeout(60000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(token=>{localStorage.setItem('token',token);localStorage.setItem('selectedMarketplaceAccountId','olist-ts-comercio');window.print=()=>{window.dispatchEvent(new Event('beforeprint'));window.__printed={rows:document.querySelectorAll('app-reports tbody tr').length,metadata:document.querySelector('.print-only').textContent,active:document.body.classList.contains('printing-report')};};},login.accessToken);
+ await page.goto('http://192.168.15.88:4201/relatorios',{waitUntil:'domcontentloaded'});await page.getByRole('heading',{name:'Mais vendidos por SKU pai',exact:true}).waitFor();
+ const total=await page.locator('app-reports mat-paginator').innerText();await page.getByRole('button',{name:'Imprimir relatório',exact:true}).click();
+ const printed=await page.evaluate(()=>window.__printed);assert.equal(printed.rows,25);assert.equal(printed.active,true);assert.match(printed.metadata,/motum/i);assert.equal(await page.locator('app-reports tbody tr').count(),25);assert.equal(await page.evaluate(()=>document.body.classList.contains('printing-report')),false);
+ await page.getByRole('button',{name:'Pr\u00f3xima p\u00e1gina',exact:true}).click();const rankBefore=await page.locator('app-reports tbody tr td').first().innerText();await page.getByRole('button',{name:'Imprimir relat\u00f3rio',exact:true}).click();assert.equal((await page.evaluate(()=>window.__printed)).rows,25);assert.match(rankBefore,/26/);
+ await page.locator('app-reports mat-paginator').getByRole('combobox').click();await page.getByRole('option',{name:'50',exact:true}).click();await page.getByRole('button',{name:'Imprimir relat\u00f3rio',exact:true}).click();assert.equal((await page.evaluate(()=>window.__printed)).rows,50);
+ await page.locator('app-reports mat-paginator').getByRole('combobox').click();await page.getByRole('option',{name:'25',exact:true}).click();
+ await page.emulateMedia({media:'print'});await page.evaluate(()=>window.dispatchEvent(new Event('beforeprint')));const pdf25=await page.pdf({preferCSSPageSize:true,printBackground:true});const pages25=(pdf25.toString('latin1').match(/\/Type\s*\/Page\b/g)||[]).length;assert.equal(pages25,1);await page.emulateMedia({media:'screen'});await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
+ await page.getByRole('textbox',{name:'Buscar anúncio',exact:true}).fill('59327');await page.getByRole('button',{name:'Imprimir relatório',exact:true}).click();assert.equal((await page.evaluate(()=>window.__printed)).rows,1);
+ await page.emulateMedia({media:'print'});await page.evaluate(()=>window.dispatchEvent(new Event('beforeprint')));
+ assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('app-reports .report-actions').isVisible(),false);assert.equal(await page.locator('.print-only').isVisible(),true);assert.equal(await page.locator('app-reports mat-paginator').isVisible(),false);
+ assert.equal(await page.locator('app-reports .metrics').isVisible(),false);
+ const pdf=await page.pdf({preferCSSPageSize:true,printBackground:true});assert.equal(pdf.subarray(0,4).toString(),'%PDF');assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({pagesFor25Rows:pages25,currentPageOnly:true,selectedRowsPrinted:printed.rows,normalPaginationRestored:true,searchRespected:true,navigationHidden:true,pdfGenerated:true,pdfBytes:pdf.length,errors}));
+ }finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

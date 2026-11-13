@@ -1,0 +1,330 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model NcmEntry {
+  code            String   @id
+  formattedCode   String
+  description     String
+  fullDescription String
+  searchText      String
+  level           Int
+  parentCode      String?
+  validFrom       DateTime? @db.Date
+  validUntil      DateTime? @db.Date
+  legalAct        String?
+  legalNumber     String?
+  legalYear       Int?
+  source          String
+  sourceHash      String
+  referenceDate   DateTime @db.Date
+  importedAt      DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([parentCode])
+  @@index([level])
+}
+
+enum Marketplace {
+  MERCADO_LIVRE
+  OLIST // Historical records only; no active integration.
+  BLING
+}
+
+enum UserRole {
+  ADMIN
+  CONSULTANT
+  VIEWER
+}
+
+enum ListingMatchType {
+  SKU
+  USER_PRODUCT
+  CATALOG_PRODUCT
+  MANUAL
+  AUTO
+}
+
+enum AuditSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum AuditIssueType {
+  NO_LISTING
+  PAUSED_WITH_STOCK
+  STOCK_DIVERGENCE
+  ML_SKU_NOT_FOUND
+  OLIST_SKU_WITHOUT_VARIATION
+  BLING_SKU_WITHOUT_VARIATION
+  UNLINKED_LISTING
+  DUPLICATE_LISTING
+  CLOSED_WITH_STOCK
+  PRODUCT_WITHOUT_MATCH
+  MISSING_VARIATION
+  EXTRA_VARIATION
+}
+
+enum SyncType {
+  FULL_SYNC
+  INCREMENTAL_SYNC
+  MANUAL_SYNC
+}
+
+enum SyncSource {
+  MERCADO_LIVRE
+  OLIST
+  BLING
+  AUDIT
+  MATCHING
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  PAUSED
+  CANCELLED
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  role         UserRole   @default(VIEWER)
+  permissions  Json?
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  auditLogs    AuditLog[]
+}
+
+model Product {
+  id             String               @id @default(cuid())
+  blingProductId String
+  blingAccountId String?
+  sku            String
+  title          String
+  brand          String?
+  category       String?
+  internalStatus String               @default("REVIEW")
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  variants       ProductVariant[]
+  links          ListingProductLink[]
+  issues         AuditIssue[]
+
+  @@index([sku])
+  @@index([brand])
+  @@index([blingAccountId])
+  @@unique([blingAccountId, blingProductId])
+}
+
+model ProductVariant {
+  id             String               @id @default(cuid())
+  productId      String
+  blingVariantId String?
+  blingAccountId String?
+  sku            String
+  color          String?
+  size           String?
+  stock          Int                  @default(0)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  product        Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  links          ListingProductLink[]
+  issues         AuditIssue[]
+
+  @@index([sku])
+  @@index([productId])
+  @@index([blingAccountId])
+  @@unique([blingAccountId, sku])
+  @@unique([blingAccountId, blingVariantId])
+}
+
+model MarketplaceAccount {
+  id             String               @id @default(cuid())
+  marketplace    Marketplace
+  name           String
+  sellerId       String
+  businessKey    String
+  nickname       String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  active         Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  listings       MarketplaceListing[]
+  integrationSnapshots IntegrationSnapshot[]
+  syncExecutions SyncExecution[]
+  issues         AuditIssue[]
+
+  @@unique([marketplace, sellerId])
+  @@index([sellerId])
+  @@index([businessKey])
+}
+
+model MarketplaceListing {
+  id                   String                      @id @default(cuid())
+  marketplaceAccountId String
+  itemId               String
+  userProductId        String?
+  title                String
+  status               String
+  listingTypeId        String?
+  catalogProductId     String?
+  price                Decimal                     @db.Decimal(14, 2)
+  availableQuantity    Int                         @default(0)
+  soldQuantity         Int                         @default(0)
+  permalink            String?
+  rawData              Json?
+  lastSyncedAt         DateTime?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  marketplaceAccount   MarketplaceAccount          @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+  variants             MarketplaceListingVariant[]
+  links                ListingProductLink[]
+  issues               AuditIssue[]
+
+  @@unique([marketplaceAccountId, itemId])
+  @@index([itemId])
+  @@index([userProductId])
+  @@index([status])
+  @@index([marketplaceAccountId])
+}
+
+model MarketplaceListingVariant {
+  id                String               @id @default(cuid())
+  listingId         String
+  variationId       String
+  userProductId     String?
+  sku               String?
+  availableQuantity Int                  @default(0)
+  soldQuantity      Int                  @default(0)
+  attributes        Json?
+  rawData           Json?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  listing           MarketplaceListing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  links             ListingProductLink[]
+  issues            AuditIssue[]
+
+  @@unique([listingId, variationId])
+  @@index([sku])
+  @@index([userProductId])
+  @@index([listingId])
+}
+
+model ListingProductLink {
+  id                String                     @id @default(cuid())
+  productId         String?
+  productVariantId  String?
+  listingId         String
+  listingVariantId  String?
+  matchType         ListingMatchType
+  confidence        Int
+  manuallyConfirmed Boolean                    @default(false)
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  product           Product?                   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productVariant    ProductVariant?            @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  listing           MarketplaceListing         @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingVariant    MarketplaceListingVariant? @relation(fields: [listingVariantId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, listingVariantId, productVariantId])
+  @@index([productId])
+  @@index([productVariantId])
+  @@index([listingId])
+  @@index([listingVariantId])
+}
+
+model AuditIssue {
+  id                   String                     @id @default(cuid())
+  type                 AuditIssueType
+  severity             AuditSeverity
+  productId            String?
+  productVariantId     String?
+  listingId            String?
+  listingVariantId     String?
+  marketplaceAccountId String?
+  title                String
+  description          String
+  metadata             Json?
+  resolved             Boolean                    @default(false)
+  resolvedAt           DateTime?
+  resolvedBy           String?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  product              Product?                   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productVariant       ProductVariant?            @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  listing              MarketplaceListing?        @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  listingVariant       MarketplaceListingVariant? @relation(fields: [listingVariantId], references: [id], onDelete: SetNull)
+  marketplaceAccount   MarketplaceAccount?        @relation(fields: [marketplaceAccountId], references: [id], onDelete: SetNull)
+
+  @@index([type])
+  @@index([severity])
+  @@index([resolved])
+}
+
+model SyncExecution {
+  id                   String              @id @default(cuid())
+  type                 SyncType
+  source               SyncSource
+  marketplaceAccountId String?
+  status               SyncStatus          @default(PENDING)
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  itemsProcessed       Int                 @default(0)
+  itemsCreated         Int                 @default(0)
+  itemsUpdated         Int                 @default(0)
+  errors               Int                 @default(0)
+  errorDetails         Json?
+  createdAt            DateTime            @default(now())
+  marketplaceAccount   MarketplaceAccount? @relation(fields: [marketplaceAccountId], references: [id], onDelete: SetNull)
+
+  @@index([source])
+  @@index([status])
+  @@index([marketplaceAccountId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+}
+
+model IntegrationSnapshot {
+  id                   String @id @default(cuid())
+  marketplaceAccountId String
+  category             String
+  key                  String
+  payload              Json
+  fetchedAt            DateTime @default(now())
+  expiresAt            DateTime?
+  updatedAt            DateTime @updatedAt
+  marketplaceAccount   MarketplaceAccount @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([marketplaceAccountId, category, key])
+  @@index([marketplaceAccountId, category, expiresAt])
+}

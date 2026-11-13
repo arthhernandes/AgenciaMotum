@@ -1,0 +1,15 @@
+const fs=require('fs');
+const assert=require('node:assert/strict');
+const vm=require('node:vm');
+const ts=require('typescript');
+const code=ts.transpileModule(fs.readFileSync('apps/frontend/src/app/core/api-url.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+const sandbox={exports:{},URL,window:{OCONSULTOR_CONFIG:{apiOrigin:'https://api.example.com'}}};
+vm.runInNewContext(code,sandbox);
+const {resolveApiUrl,publicApiUrl}=sandbox.exports;
+assert.equal(resolveApiUrl('/api/auth/login',''),'/api/auth/login');
+assert.equal(publicApiUrl('/api/chat/messages'),'https://api.example.com/api/chat/messages');
+assert.equal(publicApiUrl('/api/mercadolivre/auth/authorize/account'),'https://api.example.com/api/mercadolivre/auth/authorize/account');
+assert.equal(publicApiUrl('/api/olist/auth/authorize?account=ts_comercio'),'https://api.example.com/api/olist/auth/authorize?account=ts_comercio');
+for(const origin of ['http://public.example.com','https://user:password@example.com','https://api.example.com/api','https://api.example.com?key=private'])assert.throws(()=>resolveApiUrl('/api/chat/messages',origin));
+assert.throws(()=>resolveApiUrl('https://unrelated.example.com','https://api.example.com'));
+console.log('Runtime API configuration: 9 checks passed.');
